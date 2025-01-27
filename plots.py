@@ -228,8 +228,8 @@ def qq_plot(df: pd.DataFrame) -> go.Figure:
     # Update layout to adjust sizing and titles
     fig.update_layout(
         width=700, height=500,
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
+        xaxis=dict(visible=True),
+        yaxis=dict(visible=True),
         margin=dict(t=40, b=40),
         template='plotly_white',
         title='Q-Q Plot of Log Returns'
@@ -330,7 +330,7 @@ def pacf_plot(df: pd.DataFrame, lags: int = 40) -> go.Figure:
     """
     # Create a matplotlib figure for the PACF plot
     plt.figure(figsize=(10, 4))
-    plot_pacf(df['log_return'].dropna(), lags=lags, alpha=0.05, method='yw')
+    plot_pacf(df['log_return'].dropna(), lags=lags, alpha=0.05, method='ols')
     
     # Save the plot to a bytes buffer
     buf = io.BytesIO()

@@ -18,15 +18,16 @@ from utils import (
     arch_test
 )
 from plots import (
-    price_plot, histogram_plot, qq_plot, 
-    acf_plot, pacf_plot, create_table_descriptive, 
+    price_plot, histogram_plot, qq_plot,
+    acf_plot, pacf_plot, create_table_descriptive,
     create_table_forecast, residual_plot
 )
-import matplotlib.pyplot as plt
 import io
 import base64
 import statsmodels.api as sm
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
 
 # External stylesheet for Dash app styling
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -223,58 +224,40 @@ app.layout = html.Div([
     [Input('param-mode', 'value')]  # Input: value of parameter mode radio items
 )
 def toggle_inputs(mode):
-    """
-    Toggle the enabled/disabled state of ARIMA and GARCH parameter input fields
-    based on the selected parameter mode.
-
-    Parameters:
-    - mode (str): The selected parameter mode ('manual' or 'auto').
-
-    Returns:
-    - List[bool]: A list indicating whether each input should be disabled.
-
-    Examples:
-    >>> toggle_inputs('auto')
-    [True, True, True, True, True]
-
-    >>> toggle_inputs('manual')
-    [False, False, False, False, False]
-    """
-    # If mode is 'auto', disable all parameter inputs; otherwise, enable them
     disabled = (mode == 'auto')
     return [disabled, disabled, disabled, disabled, disabled]
 
 
 @app.callback(
     [
-        Output('status-message', 'children'),         # Output for status messages
-        Output('price-plot', 'figure'),               # Output for price plot
-        Output('hist-plot', 'figure'),                # Output for histogram plot
-        Output('qq-plot', 'figure'),                  # Output for Q-Q plot
-        Output('acf-plot', 'figure'),                 # Output for ACF plot
-        Output('pacf-plot', 'figure'),                # Output for PACF plot
-        Output('resid-plot', 'figure'),               # Output for residual plot
-        Output('stats-table', 'children'),            # Output for descriptive stats table
-        Output('forecast-table', 'children'),         # Output for forecast table
-        Output('diagnostics-summary', 'children')     # Output for diagnostics summary
+        Output('status-message', 'children'),
+        Output('price-plot', 'figure'),
+        Output('hist-plot', 'figure'),
+        Output('qq-plot', 'figure'),
+        Output('acf-plot', 'figure'),
+        Output('pacf-plot', 'figure'),
+        Output('resid-plot', 'figure'),
+        Output('stats-table', 'children'),
+        Output('forecast-table', 'children'),
+        Output('diagnostics-summary', 'children')
     ],
     [
-        Input('run-button', 'n_clicks'),             # Input: clicks on Run Analysis button
-        Input('refresh-button', 'n_clicks'),         # Input: clicks on Refresh Data button
-        Input('garch-distribution', 'value')          # Input: selected GARCH distribution
+        Input('run-button', 'n_clicks'),
+        Input('refresh-button', 'n_clicks'),
+        Input('garch-distribution', 'value')
     ],
     [
-        State('date-range', 'start_date'),            # State: selected start date
-        State('date-range', 'end_date'),              # State: selected end date
-        State('crypto-dropdown', 'value'),            # State: selected cryptocurrency
-        State('param-mode', 'value'),                 # State: parameter mode
-        State('forecast-mode', 'value'),              # State: forecast mode
-        State('arima-p', 'value'),                     # State: ARIMA p
-        State('arima-d', 'value'),                     # State: ARIMA d
-        State('arima-q', 'value'),                     # State: ARIMA q
-        State('garch-p', 'value'),                     # State: GARCH p
-        State('garch-q', 'value'),                     # State: GARCH q
-        State('forecast-horizon', 'value')             # State: forecast horizon
+        State('date-range', 'start_date'),
+        State('date-range', 'end_date'),
+        State('crypto-dropdown', 'value'),
+        State('param-mode', 'value'),
+        State('forecast-mode', 'value'),
+        State('arima-p', 'value'),
+        State('arima-d', 'value'),
+        State('arima-q', 'value'),
+        State('garch-p', 'value'),
+        State('garch-q', 'value'),
+        State('forecast-horizon', 'value')
     ]
 )
 def update_all_components(run_clicks,
@@ -288,163 +271,90 @@ def update_all_components(run_clicks,
                           p, d, q,
                           garch_p, garch_q,
                           horizon):
-    """
-    Main callback function to handle user interactions and update all components
-    of the dashboard accordingly.
-
-    This function performs the following steps:
-    1. Determines which button triggered the callback (Run Analysis or Refresh Data).
-    2. Fetches cryptocurrency data based on user-selected parameters.
-    3. Preprocesses the data and checks for stationarity using the ADF test.
-    4. Splits the data into training and testing sets if in backtest mode.
-    5. Selects ARIMA and GARCH parameters (manual or auto-tuned).
-    6. Fits the ARIMA-GARCH model to the training data.
-    7. Performs residual analysis including Ljung-Box and ARCH tests.
-    8. Generates forecasts based on the selected mode.
-    9. Computes performance metrics if in backtest mode.
-    10. Generates all necessary plots and tables for the dashboard.
-
-    Parameters:
-    - run_clicks (int): Number of times the Run Analysis button was clicked.
-    - refresh_clicks (int): Number of times the Refresh Data button was clicked.
-    - garch_dist (str): Selected error distribution for the GARCH model.
-    - start_date (str): Start date for data fetching.
-    - end_date (str): End date for data fetching.
-    - coin_id (str): Identifier of the selected cryptocurrency.
-    - param_mode (str): Parameter mode ('manual' or 'auto').
-    - forecast_mode (str): Forecast mode ('backtest' or 'future').
-    - p (int): ARIMA parameter p.
-    - d (int): ARIMA parameter d.
-    - q (int): ARIMA parameter q.
-    - garch_p (int): GARCH parameter p.
-    - garch_q (int): GARCH parameter q.
-    - horizon (int): Number of days to forecast.
-
-    Returns:
-    - Tuple containing updated status message, figures for all plots, and contents for tables and diagnostics.
-
-    Raises:
-    - ValueError: If there are issues with data sufficiency or model fitting.
-    - Exception: For any unexpected errors during processing.
-
-    Examples:
-    >>> # Since this function relies on Dash's Input and State, it's not directly callable for doctests.
-    """
-    # Determine which input triggered the callback
     ctx = dash.callback_context
     if not ctx.triggered:
-        # If no trigger, do not update anything
         return dash.no_update
 
-    # Extract the ID of the triggered input
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
     try:
         # 1) Data Fetching
-        # Convert start and end dates to string format if provided
         if start_date:
             start_date = start_date.split('T')[0]
         if end_date:
             end_date = end_date.split('T')[0]
 
-        # Fetch raw cryptocurrency data from Yahoo Finance or another source
         raw_df = fetch_data_yahoo(coin_id, start=start_date, end=end_date)
-        status_msg = "Data loaded."  # Initial status message
+        status_msg = "Data loaded."
         if trigger_id == 'refresh-button':
-            status_msg = "Data refreshed from Yahoo Finance."  # Status if refresh button clicked
+            status_msg = "Data refreshed from Yahoo Finance."
 
         # 2) Data Preprocessing
-        processed_df = preprocess_data(raw_df)  # Preprocess the raw data
+        processed_df = preprocess_data(raw_df)
         if len(processed_df) < 30:
-            # Ensure there is sufficient data
             raise ValueError("Insufficient data (minimum 30 days required).")
 
         # 3) Stationarity Check using ADF Test
-        adf_result = adf_test(processed_df['log_return'])  # Perform ADF test on log returns
+        adf_result = adf_test(processed_df['log_return'])
         adf_text = (f"ADF p-value={adf_result['p_value']:.4f}. "
                     f"Stationary? {adf_result['is_stationary']}\n")
-        # Apply differencing if data is non-stationary
         differenced = False
         if not adf_result['is_stationary']:
-            processed_df['log_return'] = processed_df['log_return'].diff().dropna()  # First difference
+            processed_df['log_return'] = processed_df['log_return'].diff().dropna()
             differenced = True
             adf_text += " => Non-stationary. Applied 1st difference.\n"
 
         # 4) Splitting Data for Backtest or Future Forecast
         if forecast_mode == 'backtest':
-            split_index = len(processed_df) - horizon  # Determine split index
+            split_index = len(processed_df) - horizon
             if split_index < horizon:
-                # Ensure there's enough data for backtesting
                 raise ValueError(f"Insufficient data for a {horizon}-day backtest. Need at least {2 * horizon} days.")
-            train_df = processed_df.iloc[:split_index]  # Training data
-            test_df = processed_df.iloc[split_index:]   # Testing data
-            forecast_dates = test_df['date'].values  # Dates for forecast
+            train_df = processed_df.iloc[:split_index]
+            test_df = processed_df.iloc[split_index:]
+            forecast_dates = test_df['date'].values
         else:
-            train_df = processed_df  # Use all data for training in future forecast mode
-            test_df = pd.DataFrame()  # No testing data
-            last_date = pd.to_datetime(train_df['date'].iloc[-1])  # Last date in training data
-            # Generate future dates for forecasting
-            forecast_dates = pd.date_range(
-                start=last_date + timedelta(days=1),
-                periods=horizon,
-                freq='D'
-            )
+            train_df = processed_df
+            test_df = pd.DataFrame()
+            last_date = pd.to_datetime(train_df['date'].iloc[-1])
+            forecast_dates = pd.date_range(start=last_date + timedelta(days=1), periods=horizon, freq='D')
 
         # 5) ARIMA/GARCH Parameter Selection
         if param_mode == 'auto':
-            # Auto-tune parameters using a predefined function
             best_params = auto_tune_arima_garch(train_df['log_return'].dropna())
-            p, d, q = best_params['arima']  # Extract ARIMA parameters
-            garch_p, garch_q = best_params['garch']  # Extract GARCH parameters
-            param_status = f"Auto: ARIMA({p},{d},{q}), GARCH({garch_p},{garch_q})"  # Status message
+            p, d, q = best_params['arima']
+            garch_p, garch_q = best_params['garch']
+            param_status = f"Auto: ARIMA({p},{d},{q}), GARCH({garch_p},{garch_q})"
         else:
-            # Use manually specified parameters
             param_status = f"Manual: ARIMA({p},{d},{q}), GARCH({garch_p},{garch_q})"
 
         # 6) Model Fitting with ARIMA and GARCH
         try:
             arima_model, garch_model, scale = fit_arima_garch(
-                train_df['log_return'].dropna(),  # Training log returns
-                arima_order=(p, d, q),            # ARIMA order
-                garch_order=(garch_p, garch_q),    # GARCH order
-                dist=garch_dist,                   # Selected error distribution
-                rescale_data=True,                 # Whether to rescale data
-                scale_factor=1000                    # Scale factor for rescaling
+                train_df['log_return'].dropna(),
+                arima_order=(p, d, q),
+                garch_order=(garch_p, garch_q),
+                dist=garch_dist,
+                rescale_data=True,
+                scale_factor=1000
             )
         except Exception as e:
-            # Handle model fitting errors
             raise ValueError(f"Model fitting error: {e}")
 
         # 7) Residual Analysis
-        final_resid = garch_model.std_resid  # Standardized residuals from GARCH model
-        resid_index = train_df.index[-len(final_resid):]  # Matching index for residuals
+        final_resid_series = pd.Series(garch_model.std_resid, index=train_df.index[-len(garch_model.std_resid):])
 
-        # Ensure final_resid is a pandas Series with the correct index
-        final_resid = pd.Series(final_resid, index=resid_index)
-
-        # Add 'date' as a level in the MultiIndex for residuals
-        if 'date' in train_df.columns:
-            final_resid.index = pd.MultiIndex.from_product(
-                [train_df['date'][-len(final_resid):], ['value']],
-                names=['date', 'dummy']
-            )
-            final_resid.index = final_resid.index.droplevel('dummy')  # Remove the dummy level
-
-        # Perform Ljung-Box Test for White Noise
-        lb_result = ljung_box_test(final_resid)
-        lb_text = (f"Ljung-Box Q p-value={lb_result['lb_pvalue']:.4f}. "
-                   f"White Noise? {lb_result['is_white_noise']}\n")
+        # Perform Ljung-# Perform Ljung-Box Test for White Noise
+        lb_resid = final_resid_series.copy()
+        lb_result = ljung_box_test(lb_resid)
 
         # Perform Engle's ARCH Test for Heteroskedasticity
-        arch_result = arch_test(final_resid, lags=12)
-        arch_text = (f"Engle's ARCH p-value={arch_result['arch_pvalue']:.4f}. "
-                     f"Heteroskedastic? {arch_result['heteroskedastic']}\n")
-        
-        # Create status messages with checkmarks based on test results
+        arch_resid = final_resid_series.copy()
+        arch_result = arch_test(arch_resid, lags=12)
+
         adf_check = "✅" if adf_result['is_stationary'] else "❌"
         lb_check = "✅" if lb_result['is_white_noise'] else "❌"
         arch_check = "✅" if not arch_result['heteroskedastic'] else "❌"
 
-        # Compile diagnostics message
         diag_message = (
             f"ADF p-value={adf_result['p_value']:.4f}. Stationary? {adf_result['is_stationary']} {adf_check}\n"
             f"{'Differenced log_return.\n' if differenced else ''}"
@@ -453,29 +363,24 @@ def update_all_components(run_clicks,
         )
 
         # 8) Forecast Generation
-        forecast_out = forecast_arima_garch(arima_model, garch_model, horizon, scale)  # Generate forecast
+        forecast_out = forecast_arima_garch(arima_model, garch_model, horizon, scale)
         if forecast_mode == 'backtest':
-            # In backtest mode, reconstruct prices based on forecasted log returns
-            last_train_price = train_df['price'].iloc[-1]  # Last price in training data
-            reconstructed_price = last_train_price * np.exp(forecast_out['mean_return'].cumsum())  # Reconstruct prices
+            last_train_price = train_df['price'].iloc[-1]
+            reconstructed_price = last_train_price * np.exp(forecast_out['mean_return'].cumsum())
         else:
-            # In future forecast mode, project future prices based on forecasted mean returns
-            last_price = train_df['price'].iloc[-1]  # Last known price
-            reconstructed_price = last_price * np.exp(forecast_out['mean_return']).cumprod()  # Project future prices
-        
-        # Create a DataFrame for forecasted prices
+            last_price = train_df['price'].iloc[-1]
+            reconstructed_price = last_price * np.exp(forecast_out['mean_return']).cumprod()
+
         forecast_df = pd.DataFrame({
-            'date': forecast_dates,  # Dates for forecast
-            'forecast_price': reconstructed_price  # Forecasted prices
+            'date': forecast_dates,
+            'forecast_price': reconstructed_price
         })
 
         # 9) Performance Metrics Calculation
         metrics = {}
         if forecast_mode == 'backtest' and not test_df.empty:
-            # Merge actual test data with forecasted data based on dates
             merged = pd.merge(test_df, forecast_df, on='date', how='inner')
             if not merged.empty:
-                # Calculate performance metrics
                 mae_ = mean_absolute_error(merged['price'], merged['forecast_price'])
                 rmse_ = root_mean_squared_error(merged['price'], merged['forecast_price'])
                 mape_ = mean_absolute_percentage_error(merged['price'], merged['forecast_price'])
@@ -484,144 +389,144 @@ def update_all_components(run_clicks,
             else:
                 metric_text = "Error: No overlapping dates for backtesting."
         else:
-            # In future forecast mode, indicate the forecast horizon
             metric_text = f"Forecast {horizon} days (no backtest)"
 
-        # Combine descriptive statistics and model information
         stats = {
-            **compute_descriptive_stats(processed_df),  # Descriptive statistics
-            'model_aic': arima_model.aic + garch_model.aic,  # Combined AIC from ARIMA and GARCH
-            'model_bic': arima_model.bic + garch_model.bic,  # Combined BIC from ARIMA and GARCH
-            **metrics  # Performance metrics if applicable
+            **compute_descriptive_stats(processed_df),
+            'model_aic': arima_model.aic + garch_model.aic,
+            'model_bic': arima_model.bic + garch_model.bic,
+            **metrics
         }
 
         # 10) Plot Generation
-        # Generate Price Plot with Forecast
+
+        # Price Plot
         price_fig = price_plot(train_df, forecast_df, forecast_mode)
-        # Generate Histogram Plot of Log Returns
+
+        # Histogram Plot
         hist_fig = histogram_plot(processed_df, garch_dist)
 
-        # Generate Q-Q Plot using Statsmodels and convert to Plotly Figure
-        plt.clf()  # Clear the current matplotlib figure
-        qq = sm.qqplot(processed_df['log_return'].dropna(), line='45', fit=True)  # Create Q-Q plot
-        buf = io.BytesIO()  # Create a buffer to hold the image
-        plt.savefig(buf, format='png', bbox_inches='tight')  # Save the plot to the buffer
-        plt.close()  # Close the matplotlib figure
-        buf.seek(0)  # Rewind the buffer
-        encoded_image = base64.b64encode(buf.read()).decode('utf-8')  # Encode the image in base64
+        # Q-Q Plot
+        fig = Figure(figsize=(7, 5))
+        ax = fig.add_subplot(1, 1, 1)
+        sm.qqplot(processed_df['log_return'].dropna(), line='45', fit=True, ax=ax)
+        ax.set_title('Q-Q Plot of Log Returns')
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        encoded_image = base64.b64encode(buf.read()).decode('utf-8')
 
-        # Create Plotly figure and add the Q-Q plot image
         qq_fig = go.Figure()
         qq_fig.add_layout_image(
             dict(
-                source=f"data:image/png;base64,{encoded_image}",  # Image source
-                x=0, y=1, xref="paper", yref="paper",  # Positioning
-                sizex=1, sizey=1, layer="below"  # Size and layering
+                source=f"data:image/png;base64,{encoded_image}",
+                x=0, y=1, xref="paper", yref="paper",
+                sizex=1, sizey=1, layer="below"
             )
         )
         qq_fig.update_layout(
-            width=700, height=500,  # Size of the figure
-            xaxis=dict(visible=False),  # Hide x-axis
-            yaxis=dict(visible=False),  # Hide y-axis
-            margin=dict(t=40, b=40),  # Margins
-            template='plotly_white',  # Template for styling
-            title='Q-Q Plot of Log Returns'  # Title of the plot
+            width=700, height=500,
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            margin=dict(t=40, b=40),
+            template='plotly_white'
         )
-        
-        # Generate ACF Plot using Statsmodels and convert to Plotly Figure
-        plt.clf()  # Clear the current matplotlib figure
-        plot_acf(processed_df['log_return'].dropna(), lags=20, alpha=0.05)  # Create ACF plot
-        buf = io.BytesIO()  # Create a buffer
-        plt.savefig(buf, format='png', bbox_inches='tight')  # Save the plot to the buffer
-        plt.close()  # Close the figure
-        buf.seek(0)  # Rewind the buffer
-        encoded_image = base64.b64encode(buf.read()).decode('utf-8')  # Encode the image
 
-        # Create Plotly figure and add the ACF plot image
+        # ACF Plot
+        fig = Figure(figsize=(7, 4))
+        ax = fig.add_subplot(1, 1, 1)
+        plot_acf(processed_df['log_return'].dropna(), lags=20, alpha=0.05, ax=ax)
+        buf_acf = io.BytesIO()
+        fig.savefig(buf_acf, format='png', bbox_inches='tight')
+        plt.close(fig)
+        buf_acf.seek(0)
+        encoded_image_acf = base64.b64encode(buf_acf.read()).decode('utf-8')
+
         acf_fig = go.Figure()
         acf_fig.add_layout_image(
             dict(
-                source=f"data:image/png;base64,{encoded_image}",  # Image source
-                x=0, y=1, xref="paper", yref="paper",  # Positioning
-                sizex=1, sizey=1, layer="below"  # Size and layering
+                source=f"data:image/png;base64,{encoded_image_acf}",
+                x=0, y=1, xref="paper", yref="paper",
+                sizex=1, sizey=1, layer="below"
             )
         )
         acf_fig.update_layout(
-            width=700, height=400,  # Size of the figure
-            xaxis=dict(visible=False),  # Hide x-axis
-            yaxis=dict(visible=False),  # Hide y-axis
-            margin=dict(t=40, b=40),  # Margins
-            template='plotly_white',  # Template for styling
-            title='ACF'  # Title of the plot
+            width=700, height=400,
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            margin=dict(t=40, b=40),
+            template='plotly_white',
+            title='ACF'
         )
 
-        # Generate PACF Plot using Statsmodels and convert to Plotly Figure
-        plt.clf()  # Clear the current matplotlib figure
-        plot_pacf(processed_df['log_return'].dropna(), lags=20, alpha=0.05, method='ols')  # Create PACF plot
-        buf = io.BytesIO()  # Create a buffer
-        plt.savefig(buf, format='png', bbox_inches='tight')  # Save the plot to the buffer
-        plt.close()  # Close the figure
-        buf.seek(0)  # Rewind the buffer
-        encoded_image = base64.b64encode(buf.read()).decode('utf-8')  # Encode the image
+        # PACF Plot
+        fig = Figure(figsize=(7, 4))
+        ax = fig.add_subplot(1, 1, 1)
+        plot_pacf(processed_df['log_return'].dropna(), lags=20, alpha=0.05, method='ols', ax=ax)
+        buf_pacf = io.BytesIO()
+        fig.savefig(buf_pacf, format='png', bbox_inches='tight')
+        plt.close(fig)
+        buf_pacf.seek(0)
+        encoded_image_pacf = base64.b64encode(buf_pacf.read()).decode('utf-8')
 
-        # Create Plotly figure and add the PACF plot image
         pacf_fig = go.Figure()
         pacf_fig.add_layout_image(
             dict(
-                source=f"data:image/png;base64,{encoded_image}",  # Image source
-                x=0, y=1, xref="paper", yref="paper",  # Positioning
-                sizex=1, sizey=1, layer="below"  # Size and layering
+                source=f"data:image/png;base64,{encoded_image_pacf}",
+                x=0, y=1, xref="paper", yref="paper",
+                sizex=1, sizey=1, layer="below"
             )
         )
         pacf_fig.update_layout(
-            width=700, height=400,  # Size of the figure
-            xaxis=dict(visible=False),  # Hide x-axis
-            yaxis=dict(visible=False),  # Hide y-axis
-            margin=dict(t=40, b=40),  # Margins
-            template='plotly_white',  # Template for styling
-            title='PACF'  # Title of the plot
+            width=700, height=400,
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            margin=dict(t=40, b=40),
+            template='plotly_white',
+            title='PACF'
         )
 
-        # Generate Residual Plot with a Red Line at 0
-        resid_fig = residual_plot(final_resid)  # Call to residual_plot function
+        # Residual Plot
+        resid_fig = residual_plot(final_resid_series)
 
-        # Generate Descriptive Statistics Table
-        stats_table = create_table_descriptive(stats)  # Call to create descriptive stats table
-        # Generate Forecasted Prices Table
-        forecast_table = create_table_forecast(forecast_df)  # Call to create forecast table
+        # Descriptive Statistics Table
+        stats_table = create_table_descriptive(stats)
+
+        # Forecasted Prices Table
+        forecast_table = create_table_forecast(forecast_df)
 
         # Compile the full status message
         status_full = f"{status_msg} | {param_status} | {metric_text}"
+
         return (
-            status_full,      # Status message
-            price_fig,        # Price plot
-            hist_fig,         # Histogram plot
-            qq_fig,           # Q-Q plot
-            acf_fig,          # ACF plot
-            pacf_fig,         # PACF plot
-            resid_fig,        # Residual plot
-            stats_table,      # Descriptive statistics table
-            forecast_table,   # Forecasted prices table
-            diag_message      # Diagnostics summary
+            status_full,
+            price_fig,
+            hist_fig,
+            qq_fig,
+            acf_fig,
+            pacf_fig,
+            resid_fig,
+            stats_table,
+            forecast_table,
+            diag_message
         )
 
     except ValueError as ve:
-        # Handle known validation errors gracefully
         return (
-            f"Validation Error: {str(ve)}",  # Status message
-            go.Figure(), go.Figure(), go.Figure(),  # Empty figures
+            f"Validation Error: {str(ve)}",
             go.Figure(), go.Figure(), go.Figure(),
-            [], [], ""  # Empty tables and diagnostics
+            go.Figure(), go.Figure(), go.Figure(),
+            [], [], ""
         )
     except Exception as e:
-        # Handle any unexpected errors
         return (
-            f"Unexpected Error: {str(e)}",    # Status message
-            go.Figure(), go.Figure(), go.Figure(),  # Empty figures
+            f"Unexpected Error: {str(e)}",
             go.Figure(), go.Figure(), go.Figure(),
-            [], [], ""  # Empty tables and diagnostics
+            go.Figure(), go.Figure(), go.Figure(),
+            [], [], ""
         )
 
 # Run the Dash app
 if __name__ == '__main__':
-    app.run_server(debug=True, dev_tools_props_check=False)
+    app.run_server(debug=True, dev_tools_props_check=False) 
