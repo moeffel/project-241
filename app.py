@@ -408,7 +408,7 @@ def update_all_components(run_clicks,
                 garch_order=(garch_p, garch_q),    # GARCH order
                 dist=garch_dist,                   # Selected error distribution
                 rescale_data=True,                 # Whether to rescale data
-                scale_factor=100                    # Scale factor for rescaling
+                scale_factor=1000                    # Scale factor for rescaling
             )
         except Exception as e:
             # Handle model fitting errors

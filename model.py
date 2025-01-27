@@ -90,13 +90,13 @@ def fit_arima_garch(
         used_scale = scale_factor
         train_returns = train_returns * used_scale
         # Debug: Print scaling information
-        # print(f"Data rescaled by factor {scale_factor}")
+        print(f"Data rescaled by factor {scale_factor}")
 
     # 1) Fit ARIMA Model
     try:
         arima_model = ARIMA(train_returns, order=arima_order).fit()
         # Debug: Print ARIMA summary
-        # print(arima_model.summary())
+        print(arima_model.summary())
     except ValueError as ve:
         raise ValueError(f"ARIMA fitting failed: {str(ve)}") from ve
     except Exception as e:
@@ -105,20 +105,20 @@ def fit_arima_garch(
     # 2) Fit GARCH Model to ARIMA Residuals
     try:
         garch = arch_model(
-            arima_model.resid,
-            p=garch_order[0],
+            arima_model.resid, #This provides the residuals (errors) from the fitted ARIMA model as input to the GARCH model. We're modeling the volatility of the ARIMA errors.
+            p=garch_order[0], #A higher p means the model considers a longer "memory" of past volatility when predicting the present.
             q=garch_order[1],
             vol='GARCH',
             dist=dist,
             rescale=False,  # Data already rescaled if needed
             mean='Zero'  # Assume ARIMA has captured the mean
         )
-        garch_res = garch.fit(disp='off')  # Suppress output
+        garch_res = garch.fit(disp='on')  # Suppress output
         # Check for convergence
         if garch_res.convergence_flag != 0:
             raise RuntimeError("GARCH failed to converge.")
         # Debug: Print GARCH summary
-        # print(garch_res.summary())
+        print(garch_res.summary())
     except Exception as e:
         raise RuntimeError(f"GARCH fitting failed: {str(e)}") from e
 
